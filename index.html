@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>기기 하드웨어 테스트</title>
+<style>
+  :root{--bg:#0f1115;--card:#1a1d24;--line:#2a2f3a;--tx:#e8eaf0;--sub:#8b93a5;--ok:#2ecc71;--bad:#ff5d5d;--warn:#f5a623;--acc:#4c8dff}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;padding:16px 16px 60px;max-width:560px;margin-inline:auto}
+  h1{font-size:20px;margin:4px 0 2px}
+  .sub{color:var(--sub);font-size:13px;margin-bottom:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+  .head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+  .head h2{font-size:16px;margin:0}
+  .badge{font-size:12px;padding:3px 9px;border-radius:99px;background:#2a2f3a;color:var(--sub);white-space:nowrap}
+  .badge.pass{background:rgba(46,204,113,.15);color:var(--ok)}
+  .badge.fail{background:rgba(255,93,93,.15);color:var(--bad)}
+  .badge.unsupported,.badge.skipped{background:rgba(245,166,35,.15);color:var(--warn)}
+  .desc{color:var(--sub);font-size:13px;margin:0 0 10px}
+  button{font:inherit;color:#fff;background:var(--acc);border:0;border-radius:10px;padding:10px 14px;margin:2px 6px 2px 0}
+  button.ghost{background:#2a2f3a}
+  button.good{background:#1f9d55}button.badbtn{background:#c0392b}
+  button:disabled{opacity:.4}
+  .detail{font-size:12.5px;color:var(--sub);margin-top:8px;white-space:pre-wrap;word-break:break-word}
+  video,img.thumb{width:100%;border-radius:10px;margin-top:8px;display:none;background:#000}
+  .bar{height:10px;background:#2a2f3a;border-radius:6px;overflow:hidden;margin-top:8px}
+  .bar>i{display:block;height:100%;width:0;background:var(--ok)}
+  .pad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px;touch-action:none;user-select:none;-webkit-user-select:none}
+  .cell{height:64px;border-radius:10px;background:#2a2f3a;display:flex;align-items:center;justify-content:center;color:var(--sub);font-size:13px}
+  .cell.hit{background:var(--ok);color:#06210f}
+  input[type=text],input[type=password],input[type=url]{width:100%;font:inherit;color:var(--tx);background:#11141a;border:1px solid var(--line);border-radius:8px;padding:9px;margin:4px 0 8px}
+  label{font-size:12.5px;color:var(--sub)}
+  pre{background:#0b0d11;border:1px solid var(--line);border-radius:10px;padding:10px;font-size:11.5px;max-height:320px;overflow:auto;white-space:pre-wrap;word-break:break-all}
+  .warn{background:rgba(245,166,35,.12);border:1px solid rgba(245,166,35,.4);color:var(--warn);padding:10px;border-radius:10px;font-size:13px;margin-bottom:12px;display:none}
+  .row{display:flex;gap:8px}.row>*{flex:1}
+</style>
+</head>
+<body>
+<h1>기기 하드웨어 테스트</h1>
+<div class="sub">카메라 · 마이크 · 스피커 · 터치 · 자이로 — 결과는 JSON으로 출력됩니다</div>
+<div class="warn" id="insecure">⚠️ HTTPS(또는 localhost)가 아니라서 카메라/마이크/센서가 차단됩니다. HTTPS 주소로 접속해 주세요.</div>
+
+<div class="card">
+  <label>테스터 이름 (선택)</label>
+  <input type="text" id="tester" placeholder="예: 홍길동">
+</div>
+
+<!-- 카메라 -->
+<div class="card">
+  <div class="head"><h2>📷 카메라</h2><span class="badge" id="b-camera">대기</span></div>
+  <p class="desc">① 카메라 스트림 확인 → ② 실제로 사진 한 장 촬영 → 화질을 자동 분석(Gemini)합니다. 선명한 물체(글씨가 있는 종이 등)를 찍어 주세요.</p>
+  <button id="cam-start">① 카메라 확인</button>
+  <button id="cam-photo" class="ghost" disabled>② 사진 촬영</button>
+  <input type="file" id="cam-file" accept="image/*" capture="environment" hidden>
+  <video id="cam-video" playsinline muted></video>
+  <img id="cam-thumb" class="thumb" alt="">
+  <div class="detail" id="d-camera"></div>
+</div>
+
+<!-- 마이크 -->
+<div class="card">
+  <div class="head"><h2>🎤 마이크</h2><span class="badge" id="b-microphone">대기</span></div>
+  <p class="desc">시작 후 5초 동안 말하거나 박수를 쳐 주세요. 소리 크기를 측정합니다.</p>
+  <button id="mic-start">마이크 테스트</button>
+  <div class="bar"><i id="mic-bar"></i></div>
+  <div class="detail" id="d-microphone"></div>
+</div>
+
+<!-- 스피커 -->
+<div class="card">
+  <div class="head"><h2>🔊 스피커</h2><span class="badge" id="b-speaker">대기</span></div>
+  <p class="desc">소리가 올라가는 톤이 재생됩니다. 볼륨을 올리고 무음 모드를 해제해 주세요.</p>
+  <button id="spk-play">톤 재생</button>
+  <span id="spk-confirm" style="display:none">
+    <button class="good" id="spk-yes">들렸어요</button><button class="badbtn" id="spk-no">안 들려요</button>
+  </span>
+  <div class="detail" id="d-speaker"></div>
+</div>
+
+<!-- 터치 -->
+<div class="card">
+  <div class="head"><h2>👆 터치</h2><span class="badge" id="b-touch">대기</span></div>
+  <p class="desc">12칸을 모두 눌러 초록색으로 만드세요. 두 손가락 이상으로 동시에 누르면 멀티터치도 기록됩니다.</p>
+  <div class="pad" id="pad"></div>
+  <button class="ghost" id="touch-reset" style="margin-top:8px">초기화</button>
+  <div class="detail" id="d-touch"></div>
+</div>
+
+<!-- 자이로 -->
+<div class="card">
+  <div class="head"><h2>🧭 자이로 / 가속도</h2><span class="badge" id="b-gyro">대기</span></div>
+  <p class="desc">시작 후 6초 동안 기기를 이리저리 기울이고 돌려 주세요. (iOS는 권한 팝업이 뜹니다)</p>
+  <button id="gyro-start">센서 테스트</button>
+  <div class="detail" id="d-gyro"></div>
+</div>
+
+<!-- Gemini / 출력 -->
+<div class="card">
+  <div class="head"><h2>⚙️ 설정</h2></div>
+  <label>Gemini API 키 (카메라 사진 분석용, JSON에는 포함되지 않음)</label>
+  <input type="password" id="gkey" placeholder="AIza...">
+  <label>Gemini 모델</label>
+  <input type="text" id="gmodel" value="gemini-flash-latest">
+  <label>결과 전송 엔드포인트 (POST, 선택)</label>
+  <input type="url" id="endpoint" placeholder="https://example.com/api/device-test">
+</div>
+
+<div class="card">
+  <div class="head"><h2>📄 결과 JSON</h2></div>
+  <pre id="json">{}</pre>
+  <button id="dl">JSON 다운로드</button>
+  <button id="copy" class="ghost">복사</button>
+  <button id="send" class="ghost">서버로 전송</button>
+  <div class="detail" id="d-out"></div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const results = {};
+const LABELS = {pending:'대기',pass:'통과',fail:'실패',unsupported:'미지원',skipped:'건너뜀'};
+const AC = window.AudioContext || window.webkitAudioContext;
+
+/* ---------- 공통 ---------- */
+function setBadge(id, status){ const b=$('#b-'+id); b.textContent=LABELS[status]; b.className='badge '+status; }
+function setDetail(id, text){ $('#d-'+id).textContent = text; }
+function record(id, status, data){ results[id] = {status, ...data}; setBadge(id, status); refreshJson(); }
+const round = (n,d=2)=>Math.round(n*10**d)/10**d;
+const errInfo = e => ({errorName:e?.name||'Error', error:e?.message||String(e)});
+
+function deviceInfo(){
+  return {
+    userAgent:navigator.userAgent, platform:navigator.platform, language:navigator.language,
+    secureContext:window.isSecureContext,
+    screen:{width:screen.width,height:screen.height,innerWidth:innerWidth,innerHeight:innerHeight,devicePixelRatio:devicePixelRatio,orientation:screen.orientation?.type??null},
+    maxTouchPoints:navigator.maxTouchPoints, hardwareConcurrency:navigator.hardwareConcurrency??null,
+    deviceMemoryGB:navigator.deviceMemory??null, connection:navigator.connection?.effectiveType??null
+  };
+}
+const KEYS = ['camera','microphone','speaker','touch','gyro'];
+function buildReport(){
+  const summary = {};
+  KEYS.forEach(k => summary[k] = results[k]?.status || 'pending');
+  return {
+    schema:'device-hw-test/v1',
+    testedAt:new Date().toISOString(),
+    tester:$('#tester').value.trim()||null,
+    page:location.origin+location.pathname,
+    device:deviceInfo(),
+    results:Object.fromEntries(KEYS.map(k=>[k, results[k]||{status:'pending'}])),
+    summary:{...summary, completed:KEYS.every(k=>results[k]), allPassed:KEYS.every(k=>summary[k]==='pass')}
+  };
+}
+function refreshJson(){ $('#json').textContent = JSON.stringify(buildReport(), null, 2); }
+
+if(!window.isSecureContext) $('#insecure').style.display='block';
+
+/* URL 파라미터 / 저장값 복원: ?gkey=&model=&endpoint=&tester= */
+(function(){
+  const p = new URLSearchParams(location.search);
+  $('#gkey').value = p.get('gkey') || sessionStorage.getItem('gkey') || '';
+  if(p.get('model')) $('#gmodel').value = p.get('model');
+  if(p.get('endpoint')) $('#endpoint').value = p.get('endpoint');
+  if(p.get('tester')) $('#tester').value = p.get('tester');
+  $('#gkey').addEventListener('change', e=>{ try{sessionStorage.setItem('gkey', e.target.value)}catch{} });
+  $('#tester').addEventListener('input', refreshJson);
+})();
+
+/* ---------- 카메라 ---------- */
+let camStreamInfo = null;
+$('#cam-start').onclick = async () => {
+  setDetail('camera','카메라 여는 중...');
+  if(!navigator.mediaDevices?.getUserMedia){ record('camera','unsupported',{error:'getUserMedia 미지원'}); setDetail('camera','이 브라우저는 getUserMedia를 지원하지 않습니다.'); return; }
+  let stream;
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false});
+    const v = $('#cam-video'); v.srcObject = stream; v.style.display='block'; await v.play();
+    await new Promise(r=>setTimeout(r,1200));
+    const t = stream.getVideoTracks()[0];
+    let caps = null; try{ caps = JSON.parse(JSON.stringify(t.getCapabilities?.() ?? null)); }catch{}
+    let cams = null; try{ cams = (await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='videoinput').length; }catch{}
+    camStreamInfo = {label:t.label, settings:t.getSettings(), capabilities:caps, videoInputCount:cams, videoElement:{width:v.videoWidth,height:v.videoHeight}};
+    setDetail('camera', `스트림 OK: ${v.videoWidth}x${v.videoHeight} @${t.getSettings().frameRate??'?'}fps\n이제 ② 사진 촬영을 눌러 주세요.`);
+    $('#cam-photo').disabled = false;
+    record('camera','pending',{stream:camStreamInfo, photo:null});
+    setBadge('camera','pending');
+  }catch(e){
+    camStreamInfo = null;
+    record('camera','fail',{stage:'stream', ...errInfo(e)});
+    setDetail('camera', e.name==='NotAllowedError' ? '카메라 권한이 거부되었습니다.' : `오류: ${e.name} ${e.message}`);
+  }finally{
+    if(stream) stream.getTracks().forEach(t=>t.stop());
+    $('#cam-video').style.display='none'; $('#cam-video').srcObject=null;
+  }
+};
+$('#cam-photo').onclick = () => $('#cam-file').click();
+
+async function loadBitmap(file){
+  try{ return await createImageBitmap(file,{imageOrientation:'from-image'}); }
+  catch{ return await new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=URL.createObjectURL(file); }); }
+}
+function drawScaled(bmp,max){
+  const w0=bmp.width||bmp.naturalWidth, h0=bmp.height||bmp.naturalHeight;
+  const s=Math.min(1,max/Math.max(w0,h0));
+  const c=document.createElement('canvas'); c.width=Math.max(1,Math.round(w0*s)); c.height=Math.max(1,Math.round(h0*s));
+  c.getContext('2d').drawImage(bmp,0,0,c.width,c.height); return c;
+}
+function imageMetrics(c){
+  const {width:w,height:h}=c; const d=c.getContext('2d').getImageData(0,0,w,h).data; const n=w*h;
+  const g=new Float32Array(n); let sum=0, dark=0, bright=0;
+  for(let i=0;i<n;i++){ const y=0.299*d[4*i]+0.587*d[4*i+1]+0.114*d[4*i+2]; g[i]=y; sum+=y; if(y<15)dark++; if(y>240)bright++; }
+  const mean=sum/n; let sq=0; for(let i=0;i<n;i++){ const t=g[i]-mean; sq+=t*t; }
+  let ls=0, lq=0, cnt=0;
+  for(let y=1;y<h-1;y++) for(let x=1;x<w-1;x++){ const i=y*w+x; const l=g[i-1]+g[i+1]+g[i-w]+g[i+w]-4*g[i]; ls+=l; lq+=l*l; cnt++; }
+  const lm=ls/cnt;
+  return {analysisSize:`${w}x${h}`, meanBrightness:round(mean,1), contrastStd:round(Math.sqrt(sq/n),1), laplacianVariance:round(lq/cnt-lm*lm,1), darkClipPct:round(dark/n*100,1), brightClipPct:round(bright/n*100,1)};
+}
+async function askGemini(b64){
+  const key=$('#gkey').value.trim(); const model=$('#gmodel').value.trim()||'gemini-flash-latest';
+  if(!key) return {skipped:true, reason:'Gemini API 키 없음'};
+  const prompt = `You are a QA inspector for a phone camera. Judge the CAMERA IMAGE QUALITY of this photo (not the subject matter).
+Return ONLY a JSON object with these keys:
+{"sharpness":1-10 (10=very sharp),"exposure":"underexposed"|"ok"|"overexposed","noise":1-10 (10=very noisy),"color_accuracy":1-10,"motion_blur":true|false,"lens_obstruction":true|false (smudge/finger/cover over lens),"overall_pass":true|false,"issues":[string],"summary_ko":"한 문장 한국어 요약"}`;
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,{
+    method:'POST', headers:{'Content-Type':'application/json','x-goog-api-key':key},
+    body:JSON.stringify({contents:[{parts:[{text:prompt},{inline_data:{mime_type:'image/jpeg',data:b64}}]}],generationConfig:{responseMimeType:'application/json',temperature:0.2}})
+  });
+  if(!res.ok) throw new Error(`Gemini HTTP ${res.status}: ${(await res.text()).slice(0,200)}`);
+  const j = await res.json();
+  const txt = (j.candidates?.[0]?.content?.parts||[]).map(p=>p.text||'').join('');
+  return {model, ...JSON.parse(txt)};
+}
+$('#cam-file').onchange = async e => {
+  const file = e.target.files[0]; e.target.value=''; if(!file) return;
+  setDetail('camera','사진 분석 중...');
+  try{
+    const bmp = await loadBitmap(file);
+    const fullW = bmp.width||bmp.naturalWidth, fullH = bmp.height||bmp.naturalHeight;
+    const local = imageMetrics(drawScaled(bmp,512));
+    const sendCanvas = drawScaled(bmp,1280);
+    const dataUrl = sendCanvas.toDataURL('image/jpeg',0.85);
+    const th=$('#cam-thumb'); th.src=dataUrl; th.style.display='block';
+    const localPass = local.laplacianVariance>=60 && local.meanBrightness>=35 && local.meanBrightness<=225;
+    let gemini, geminiError=null;
+    try{ gemini = await askGemini(dataUrl.split(',')[1]); }catch(err){ geminiError = err.message; gemini = null; }
+    const geminiUsed = gemini && !gemini.skipped;
+    const photoOk = geminiUsed ? !!gemini.overall_pass : localPass;
+    const photo = {fileName:file.name, fileSizeKB:round(file.size/1024,0), mime:file.type, resolution:`${fullW}x${fullH}`, megapixels:round(fullW*fullH/1e6,1), localMetrics:local, localPass, gemini:geminiUsed?gemini:null, geminiSkipped:gemini?.skipped?gemini.reason:null, geminiError};
+    const status = (camStreamInfo && photoOk) ? 'pass' : 'fail';
+    record('camera', status, {stream:camStreamInfo, photo, verdictBasis: geminiUsed?'gemini':'local-heuristic'});
+    setDetail('camera', `${fullW}x${fullH} (${photo.megapixels}MP) · 선명도 ${local.laplacianVariance} · 밝기 ${local.meanBrightness}\n` +
+      (geminiUsed ? `Gemini: ${gemini.summary_ko||''}` : `Gemini 미사용(${geminiError||gemini?.reason}) → 로컬 기준으로 판정`));
+  }catch(err){
+    record('camera','fail',{stage:'photo',stream:camStreamInfo, ...errInfo(err)}); setDetail('camera','사진 분석 실패: '+err.message);
+  }
+};
+
+/* ---------- 마이크 ---------- */
+$('#mic-start').onclick = async () => {
+  if(!navigator.mediaDevices?.getUserMedia){ record('microphone','unsupported',{error:'getUserMedia 미지원'}); return; }
+  let stream, ac;
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+    ac = new AC(); await ac.resume();
+    const an = ac.createAnalyser(); an.fftSize=2048; ac.createMediaStreamSource(stream).connect(an);
+    const buf = new Float32Array(an.fftSize); const t0=performance.now();
+    let peak=0, floor=1, sum=0, n=0;
+    setDetail('microphone','측정 중... 말하거나 박수를 치세요');
+    await new Promise(res=>{
+      const tick=()=>{
+        an.getFloatTimeDomainData(buf); let s=0; for(const v of buf) s+=v*v; const rms=Math.sqrt(s/buf.length);
+        peak=Math.max(peak,rms); floor=Math.min(floor,rms); sum+=rms; n++;
+        $('#mic-bar').style.width=Math.min(100,rms*400)+'%';
+        (performance.now()-t0<5000)?requestAnimationFrame(tick):res();
+      }; tick();
+    });
+    const db = v=>round(20*Math.log10(Math.max(v,1e-6)),1);
+    const track=stream.getAudioTracks()[0];
+    const data = {peakDb:db(peak), avgDb:db(sum/n), noiseFloorDb:db(floor), peakRms:round(peak,4), sampleRate:ac.sampleRate, label:track.label, settings:track.getSettings()};
+    const ok = peak>0.02;
+    record('microphone', ok?'pass':'fail', data);
+    setDetail('microphone', `최대 ${data.peakDb}dB / 평균 ${data.avgDb}dB / 바닥 ${data.noiseFloorDb}dB` + (ok?'':'\n소리가 거의 감지되지 않았습니다. 다시 시도해 주세요.'));
+  }catch(e){
+    record('microphone','fail',{...errInfo(e)}); setDetail('microphone', e.name==='NotAllowedError'?'마이크 권한이 거부되었습니다.':`오류: ${e.name} ${e.message}`);
+  }finally{
+    stream?.getTracks().forEach(t=>t.stop()); ac?.close(); $('#mic-bar').style.width='0';
+  }
+};
+
+/* ---------- 스피커 ---------- */
+let spkInfo=null;
+$('#spk-play').onclick = async () => {
+  if(!AC){ record('speaker','unsupported',{error:'WebAudio 미지원'}); return; }
+  try{
+    const ac=new AC(); await ac.resume();
+    const o=ac.createOscillator(), g=ac.createGain(); g.gain.value=0.25;
+    o.frequency.setValueAtTime(440,ac.currentTime); o.frequency.linearRampToValueAtTime(1760,ac.currentTime+1.5);
+    o.connect(g).connect(ac.destination); o.start(); o.stop(ac.currentTime+1.6);
+    spkInfo={sampleRate:ac.sampleRate, baseLatencyMs:round((ac.baseLatency||0)*1000,1), outputLatencyMs:ac.outputLatency!=null?round(ac.outputLatency*1000,1):null, tone:'440→1760Hz sweep 1.5s'};
+    setDetail('speaker','재생 중... 소리가 들렸는지 알려 주세요.'); $('#spk-confirm').style.display='inline';
+    o.onended=()=>ac.close();
+  }catch(e){ record('speaker','fail',errInfo(e)); }
+};
+$('#spk-yes').onclick = () => { record('speaker','pass',{userConfirmed:true,...spkInfo}); setDetail('speaker','사용자가 소리를 확인했습니다.'); $('#spk-confirm').style.display='none'; };
+$('#spk-no').onclick  = () => { record('speaker','fail',{userConfirmed:false,...spkInfo}); setDetail('speaker','볼륨/무음 모드/블루투스 출력 여부를 확인하고 다시 시도하세요.'); $('#spk-confirm').style.display='none'; };
+
+/* ---------- 터치 ---------- */
+(function(){
+  const pad=$('#pad'); const N=12;
+  const state={hit:new Set(),active:new Set(),maxSimultaneous:0,pointerTypes:new Set(),events:0};
+  function build(){
+    pad.innerHTML=''; for(let i=0;i<N;i++){ const c=document.createElement('div'); c.className='cell'; c.dataset.i=i; c.textContent=i+1; pad.appendChild(c); }
+    state.hit.clear(); state.active.clear(); state.maxSimultaneous=0; state.pointerTypes.clear(); state.events=0;
+    setDetail('touch',`0/${N} · 멀티터치 최대 0점`);
+  }
+  function mark(el){ const c=el?.closest?.('.cell'); if(c){ c.classList.add('hit'); state.hit.add(c.dataset.i); } }
+  function update(){
+    const data={cellsHit:state.hit.size,cellsTotal:N,maxSimultaneousTouches:state.maxSimultaneous,multiTouchDetected:state.maxSimultaneous>=2,pointerTypes:[...state.pointerTypes],maxTouchPoints:navigator.maxTouchPoints,touchEventSupported:'ontouchstart' in window};
+    setDetail('touch',`${state.hit.size}/${N} · 멀티터치 최대 ${state.maxSimultaneous}점`);
+    if(state.hit.size===N) record('touch','pass',data);
+  }
+  pad.addEventListener('pointerdown',e=>{ state.active.add(e.pointerId); state.pointerTypes.add(e.pointerType); state.maxSimultaneous=Math.max(state.maxSimultaneous,state.active.size); state.events++; mark(document.elementFromPoint(e.clientX,e.clientY)); update(); });
+  pad.addEventListener('pointermove',e=>{ if(state.active.has(e.pointerId)){ mark(document.elementFromPoint(e.clientX,e.clientY)); update(); } });
+  ['pointerup','pointercancel'].forEach(t=>pad.addEventListener(t,e=>state.active.delete(e.pointerId)));
+  $('#touch-reset').onclick=()=>{ build(); delete results.touch; setBadge('touch','pending'); refreshJson(); };
+  build();
+})();
+
+/* ---------- 자이로 ---------- */
+$('#gyro-start').onclick = async () => {
+  const DO=window.DeviceOrientationEvent, DM=window.DeviceMotionEvent;
+  if(!DO && !DM){ record('gyro','unsupported',{error:'DeviceOrientation/DeviceMotion 미지원'}); setDetail('gyro','이 브라우저는 모션 센서 API가 없습니다.'); return; }
+  const perm={};
+  try{
+    const reqs=[];
+    if(DO && typeof DO.requestPermission==='function') reqs.push(DO.requestPermission().then(r=>perm.orientation=r));
+    if(DM && typeof DM.requestPermission==='function') reqs.push(DM.requestPermission().then(r=>perm.motion=r));
+    await Promise.all(reqs);
+  }catch(e){ record('gyro','fail',{permission:perm,...errInfo(e)}); setDetail('gyro','권한 요청 실패: '+e.message); return; }
+  if(perm.orientation==='denied'||perm.motion==='denied'){ record('gyro','fail',{permission:perm,error:'권한 거부'}); setDetail('gyro','센서 권한이 거부되었습니다. Safari를 완전히 종료 후 다시 시도하세요.'); return; }
+
+  const rng=()=>({min:Infinity,max:-Infinity}); const up=(r,v)=>{ if(v==null||isNaN(v))return; r.min=Math.min(r.min,v); r.max=Math.max(r.max,v); };
+  const O={alpha:rng(),beta:rng(),gamma:rng()}, A={x:rng(),y:rng(),z:rng()}, G={alpha:rng(),beta:rng(),gamma:rng()};
+  let oN=0,mN=0,last='';
+  const onO=e=>{ oN++; up(O.alpha,e.alpha);up(O.beta,e.beta);up(O.gamma,e.gamma); last=`α ${round(e.alpha??0,0)}  β ${round(e.beta??0,0)}  γ ${round(e.gamma??0,0)}`; };
+  const onM=e=>{ mN++; const a=e.accelerationIncludingGravity||{}; up(A.x,a.x);up(A.y,a.y);up(A.z,a.z); const r=e.rotationRate||{}; up(G.alpha,r.alpha);up(G.beta,r.beta);up(G.gamma,r.gamma); };
+  window.addEventListener('deviceorientation',onO); window.addEventListener('devicemotion',onM);
+  const t0=performance.now();
+  await new Promise(res=>{ const iv=setInterval(()=>{ const left=Math.max(0,6-(performance.now()-t0)/1000); setDetail('gyro',`측정 중 (${left.toFixed(1)}s) 기기를 기울이세요\n${last||'이벤트 대기...'}`); if(left<=0){clearInterval(iv);res();} },100); });
+  window.removeEventListener('deviceorientation',onO); window.removeEventListener('devicemotion',onM);
+
+  const fin=o=>Object.fromEntries(Object.entries(o).map(([k,r])=>[k,isFinite(r.min)?{min:round(r.min,1),max:round(r.max,1),range:round(r.max-r.min,1)}:null]));
+  const oF=fin(O), aF=fin(A), gF=fin(G);
+  const oRange=Math.max(...Object.values(oF).map(v=>v?.range??0));
+  const aRange=Math.max(...Object.values(aF).map(v=>v?.range??0));
+  const data={permission:perm,orientationEvents:oN,motionEvents:mN,orientation:oF,accelerationIncludingGravity:aF,rotationRate:gF,maxOrientationRangeDeg:oRange,maxAccelRange:aRange};
+  if(oN===0 && mN===0){ record('gyro','fail',{...data,error:'센서 이벤트 없음 (센서 없음 또는 HTTPS 아님)'}); setDetail('gyro','센서 데이터가 들어오지 않았습니다.'); return; }
+  const ok=(oN>=10 && oRange>=20) || (mN>=10 && aRange>=3);
+  record('gyro',ok?'pass':'fail',data);
+  setDetail('gyro',`방향 이벤트 ${oN}회 / 모션 이벤트 ${mN}회 · 각도 변화 최대 ${oRange}° · 가속도 변화 최대 ${aRange}`+(ok?'':'\n변화량이 작습니다. 더 크게 기울여서 다시 시도해 주세요.'));
+};
+
+/* ---------- 출력 ---------- */
+function stamp(){ const d=new Date(); const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`; }
+$('#dl').onclick=()=>{
+  const blob=new Blob([JSON.stringify(buildReport(),null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`device-test-${stamp()}.json`; document.body.appendChild(a); a.click(); a.remove();
+  setDetail('out','JSON 파일을 내려받았습니다.');
+};
+$('#copy').onclick=async()=>{ try{ await navigator.clipboard.writeText(JSON.stringify(buildReport(),null,2)); setDetail('out','클립보드에 복사했습니다.'); }catch(e){ setDetail('out','복사 실패: '+e.message); } };
+$('#send').onclick=async()=>{
+  const url=$('#endpoint').value.trim(); if(!url){ setDetail('out','엔드포인트 URL을 입력해 주세요.'); return; }
+  try{
+    const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(buildReport())});
+    setDetail('out',`전송 완료: HTTP ${res.status}`);
+  }catch(e){ setDetail('out','전송 실패 (CORS/네트워크 확인): '+e.message); }
+};
+refreshJson();
+</script>
+</body>
+</html>
