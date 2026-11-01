@@ -1,0 +1,19 @@
+{
+  "name": "gdgoc-hackathon-team1-device-test",
+  "version": "1.0.0",
+  "private": true,
+  "description": "카메라·마이크·스피커·터치·자이로 테스트 페이지 + 결과 JSON 저장 서버",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "share": "node scripts/share.js",
+    "models": "node scripts/models.js",
+    "validate": "node scripts/validate.js",
+    "summary": "node scripts/summary.js"
+  },
+  "dependencies": {
+    "qrcode-terminal": "^0.12.0"
+  }
+}
